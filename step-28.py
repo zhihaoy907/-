@@ -464,7 +464,6 @@ class NeutronDiffusionProblem:
                                     assemblies_y * rods_per_assembly_y * pin_pitch_y,
                                     assemblies_z * assembly_height])
 
-        # n_subdivisions 计算
         n_subdivisions = [assemblies_x * rods_per_assembly_x]
         if dim >= 2:
             n_subdivisions.append(assemblies_y * rods_per_assembly_y)
@@ -474,7 +473,6 @@ class NeutronDiffusionProblem:
         coarse_grid = Triangulation("2D","2D")
         dealii.subdivided_hyper_rectangle2(coarse_grid, n_subdivisions, bottom_left, upper_right, True)
         print(f"514: grid cells: {coarse_grid.n_active_cells()}")
-        # n_assemblies = 4
         assembly_materials = [
             [
                 [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -579,7 +577,6 @@ class NeutronDiffusionProblem:
 
             cell.material_id = assembly_materials[core[ax_int][ay_int][az_int]][cx_int][cy_int][0] - 1
 
-        # 初始化能量组
         for group in range(self.parameters.n_groups):
             energy_group = EnergyGroup(group, self.material_data, coarse_grid, self.fe, dim)
             self.energy_groups.append(energy_group)
@@ -653,7 +650,6 @@ class NeutronDiffusionProblem:
                 print(f"{self.energy_groups[group].n_dofs()} ", end="")
             print("\n")
             
-            # 创建并行任务组
             tasks = TaskGroup()
             for group in range(self.parameters.n_groups):
                 task = Task(self.energy_groups[group].assemble_system_matrix())
@@ -661,42 +657,33 @@ class NeutronDiffusionProblem:
 
             tasks.join_all()
                     
-            # 幂迭代
             iteration = 1
             while True:
-                # 处理每个能群
                 for group in range(self.parameters.n_groups):
-                    # 组装本能群右端项
                     self.energy_groups[group].assemble_ingroup_rhs(
                         ZeroFunction(self.dim)
                     )
                     
-                    # 组装跨能群耦合项
                     for bgroup in range(self.parameters.n_groups):
                         self.energy_groups[group].assemble_cross_group_rhs(
                             self.energy_groups[bgroup]
                         )
                         
-                    # 求解线性系统
                     self.energy_groups[group].solve()
                     
-                # 计算新的k_eff和误差
                 k_eff = self.get_total_fission_source()
                 error = abs(k_eff - k_eff_old) / abs(k_eff)
                 
-                # 计算通量比和最大热中子通量
                 flux_ratio = (self.energy_groups[0].solution.linfty_norm() /
                             self.energy_groups[1].solution.linfty_norm())
                 max_thermal = self.energy_groups[1].solution.linfty_norm()
                 
-                # 打印迭代信息
                 print(f"Iter number:{iteration:>2d} k_eff={k_eff:.12f} "
                     f"flux_ratio={flux_ratio:.12f} "
                     f"max_thermal={max_thermal:.12f}")
                     
                 k_eff_old = k_eff
                 
-                # 更新旧解
                 for group in range(self.parameters.n_groups):
                     self.energy_groups[group].solution_old = \
                         self.energy_groups[group].solution.copy()
@@ -704,22 +691,18 @@ class NeutronDiffusionProblem:
                     
                 iteration += 1
                 
-                # 检查收敛性
                 if error <= self.parameters.convergence_tolerance or iteration >= 500:
                     break
                     
-            # 输出收敛信息到文件
             self.convergence_table_stream.write(
                 f"{cycle} {self.energy_groups[0].n_dofs()} "
                 f"{self.energy_groups[1].n_dofs()} {k_eff} "
                 f"{self.energy_groups[0].solution.linfty_norm() / self.energy_groups[1].solution.linfty_norm()}\n"
             )
             
-            # 输出每个能群的结果
             for group in range(self.parameters.n_groups):
                 self.energy_groups[group].output_results(cycle)
                 
-            # 打印循环信息和计时
             print()
             print(f"   Cycle={cycle}, n_dofs="
                 f"{self.energy_groups[0].n_dofs() + self.energy_groups[1].n_dofs()}, "
